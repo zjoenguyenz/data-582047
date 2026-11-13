@@ -7,6 +7,22 @@ BASE = "582047-base.m3u"
 OUT = "582047.m3u"
 SENSITIVE = re.compile(r'(mac=[0-9A-Fa-f:]{17}|play_token=|tpninosaga|dropboxusercontent)', re.I)
 
+def decode_escapes(s):
+    """Decode literal backslash-u escape sequences some sources ship
+    un-decoded in titles (e.g. BLV names), combining surrogate pairs."""
+    s = re.sub(r'\\U([0-9a-fA-F]{8})', lambda m: chr(int(m.group(1), 16)), s)
+    s = re.sub(r'\\[uU]([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), s)
+    out, i = [], 0
+    while i < len(s):
+        o = ord(s[i])
+        if 0xD800 <= o <= 0xDBFF and i + 1 < len(s) and 0xDC00 <= ord(s[i + 1]) <= 0xDFFF:
+            out.append(chr(0x10000 + ((o - 0xD800) << 10) + (ord(s[i + 1]) - 0xDC00))); i += 2
+        elif 0xD800 <= o <= 0xDFFF:
+            out.append('\ufffd'); i += 1
+        else:
+            out.append(s[i]); i += 1
+    return ''.join(out)
+
 def parse_text(text):
     entries, cur = [], None
     for line in text.splitlines():
@@ -23,10 +39,10 @@ def group_of(e):
     return m.group(1) if m else 'Khác'
 
 def main():
-    base = parse_text(open(BASE, encoding='utf-8', errors='ignore').read())
+    base = parse_text(decode_escapes(open(BASE, encoding='utf-8', errors='ignore').read()))
     try:
         with urllib.request.urlopen(MIRROR, timeout=30) as r:
-            mtext = r.read().decode('utf-8', errors='ignore')
+            mtext = decode_escapes(r.read().decode('utf-8', errors='ignore'))
     except Exception as e:
         print("mirror fetch failed:", e); return 1
     mirror = parse_text(mtext)
